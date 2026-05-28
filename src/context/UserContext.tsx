@@ -8,6 +8,7 @@ export interface UserData {
   email: string;
   guardianOne?: string; // Add this
   guardianTwo?: string; // Add this
+  profileImage?: string; // Add this
   token?: string;
 }
 
@@ -15,19 +16,23 @@ interface UserContextType {
   user: UserData | null;
   setUser: (user: UserData | null) => void;
   logout: () => void;
+  quoteNotificationShown: boolean;
+  setQuoteNotificationShown: (shown: boolean) => void;
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const UserProvider = ({ children }: any) => {
   const [user, setUser] = useState<UserData | null>(null);
+  const [quoteNotificationShown, setQuoteNotificationShown] = useState(false);
 
   const logout = () => {
     setUser(null);
+    setQuoteNotificationShown(false); // Reset on logout
   };
 
   return (
-    <UserContext.Provider value={{ user, setUser, logout }}>
+    <UserContext.Provider value={{ user, setUser, logout, quoteNotificationShown, setQuoteNotificationShown }}>
       {children}
     </UserContext.Provider>
   );

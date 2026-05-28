@@ -26,6 +26,23 @@ const SignupScreen = ({ navigation }: any) => {
       return;
     }
 
+    // --- EMAIL VALIDATION (@ MUST BE PRESENT) ---
+    if (!email.includes('@')) {
+      Alert.alert("Invalid Email", "Please enter a valid email address containing '@'.");
+      return;
+    }
+
+    // --- PASSWORD VALIDATION (MIN 8 CHARACTERS & AT LEAST ONE SPECIAL CHARACTER) ---
+    const specialCharRegex = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/;
+    if (password.length < 8) {
+      Alert.alert("Weak Password", "Password must be at least 8 characters long.");
+      return;
+    }
+    if (!specialCharRegex.test(password)) {
+      Alert.alert("Weak Password", "Password must contain at least one special character (e.g. @, #, $, !, %, *, ?, &).");
+      return;
+    }
+
     const phoneRegex = /^\d{4}-\d{7}$/;
     if (!phoneRegex.test(g1) || !phoneRegex.test(g2)) {
       Alert.alert("Invalid Number Format", "Please enter a valid 11-digit guardian number.");
@@ -37,7 +54,7 @@ const SignupScreen = ({ navigation }: any) => {
       const cleanG1 = g1.replace('-', '');
       const cleanG2 = g2.replace('-', '');
 
-      const response = await axios.post('http://192.168.1.46:5000/api/signup', {
+      const response = await axios.post('http://192.168.18.121:5000/api/signup', {
         name, email, password, guardianOne: cleanG1, guardianTwo: cleanG2
       });
 
@@ -87,7 +104,7 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 16, color: '#4A5568', marginTop: 8 },
   shadowOverlay: { position: 'absolute', top: height * 0.08 + 34 + 65, left: 25, right: 25, height: 25, backgroundColor: '#C6F6D5', borderTopLeftRadius: 40, borderTopRightRadius: 40, opacity: 0.6 },
   formCard: { backgroundColor: 'white', borderTopLeftRadius: 40, borderTopRightRadius: 40, padding: 30, flex: 1, marginTop: 15 },
-  mainButton: { backgroundColor: '#2F855A', padding: 18, borderRadius: 15, alignItems: 'center', marginTop: 15 },
+  mainButton: { backgroundColor: '#38A169', padding: 18, borderRadius: 15, alignItems: 'center', marginTop: 15 },
   buttonText: { color: 'white', fontWeight: 'bold', fontSize: 18 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 25 },
   footerText: { color: '#718096', fontSize: 15 },

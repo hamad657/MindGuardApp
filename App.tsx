@@ -10,6 +10,7 @@ import DashboardScreen from './src/screens/DashboardScreen';
 import AssessmentScreen from './src/screens/AssessmentScreen';
 import DoctorScreen from './src/screens/DoctorScreen'; 
 import ProfileScreen from './src/screens/ProfileScreen'; 
+import ChatBotScreen from './src/screens/ChatBotScreen';
 
 // --- Context Imports ---
 import { ThemeProvider } from './src/context/ThemeContext';
@@ -34,6 +35,7 @@ export default function App() {
             <Stack.Screen name="Assessment" component={AssessmentScreen} />
             <Stack.Screen name="Doctor" component={DoctorScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="ChatBot" component={ChatBotScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </ThemeProvider>

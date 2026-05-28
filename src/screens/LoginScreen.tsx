@@ -26,7 +26,7 @@ const LoginScreen = ({ navigation }: any) => {
 
     try {
       // Laptop IP as requested
-      const response = await axios.post('http://192.168.1.46:5000/api/login', {
+      const response = await axios.post('http://192.168.18.121:5000/api/login', {
         email, password
       });
 

@@ -109,7 +109,7 @@ const AssessmentScreen = ({ navigation }: any) => {
       console.log("📤 Sending to backend:", payload);
 
       try {
-        const response = await axios.post('http://192.168.1.46:5000/api/save-full-assessment', payload);
+        const response = await axios.post('http://192.168.18.121:5000/api/save-full-assessment', payload);
         
         if (response.status === 200 || response.status === 201) {
           const predictionType = phqResult.isLocalPrediction ? "(Calculated)" : "(AI Predicted)";
@@ -193,7 +193,7 @@ const AssessmentScreen = ({ navigation }: any) => {
             activeOpacity={0.9}
           >
             <View>
-              <Text style={[styles.cardMainTitle, {color: theme.primary}]}>PHQ-9</Text>
+              <Text style={[styles.cardMainTitle, {color: theme.primary}]}>PHQ-9(Patient Health Questionnaire-9)</Text>
               <Text style={styles.cardSubTitle}>Depression Screening</Text>
             </View>
             <Icon name={activeCard === 'PHQ' ? 'chevron-up' : 'chevron-down'} size={20} color="#718096" />
@@ -208,7 +208,7 @@ const AssessmentScreen = ({ navigation }: any) => {
             activeOpacity={0.9}
           >
             <View>
-              <Text style={[styles.cardMainTitle, {color: theme.primary}]}>GAD-7</Text>
+              <Text style={[styles.cardMainTitle, {color: theme.primary}]}>GAD-7(Generalized Anxiety Disorder-7)</Text>
               <Text style={styles.cardSubTitle}>Anxiety Screening</Text>
             </View>
             <Icon name={activeCard === 'GAD' ? 'chevron-up' : 'chevron-down'} size={20} color="#718096" />
@@ -234,14 +234,29 @@ const AssessmentScreen = ({ navigation }: any) => {
         </TouchableOpacity>
       </ScrollView>
 
+      {/* --- FLOATING TABS --- */}
       <View style={styles.tabContainer}>
         <View style={styles.bottomTabsContainer}>
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Dashboard')}>
-            <Icon name="home-outline" size={22} color="#718096" /><Text style={styles.tabLabel}>Home</Text>
+            <Icon name="home-outline" size={22} color="#718096" />
+            <Text style={styles.tabLabel}>Home</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem}><Icon name="chatbubble-outline" size={22} color="#718096" /><Text style={styles.tabLabel}>Chat</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Doctor')}><Icon name="medical-outline" size={24} color="#718096" /><Text style={styles.tabLabel}>Doctor</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Profile')}><Icon name="person-outline" size={22} color="#718096" /><Text style={styles.tabLabel}>Profile</Text></TouchableOpacity>
+          
+          {/* Linked directly to ChatBot screen */}
+          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('ChatBot')}>
+            <Icon name="chatbubble-outline" size={22} color="#718096" />
+            <Text style={styles.tabLabel}>Chat</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Doctor')}>
+            <Icon name="medical-outline" size={24} color="#718096" />
+            <Text style={styles.tabLabel}>Doctor</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Profile')}>
+            <Icon name="person-outline" size={22} color="#718096" />
+            <Text style={styles.tabLabel}>Profile</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </LinearGradient>

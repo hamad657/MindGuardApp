@@ -13,11 +13,12 @@ import axios from 'axios';
 import GetLocation from 'react-native-get-location'; 
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
+import MotivationalNotification from '../components/MotivationalNotification';
 
 const { width } = Dimensions.get('window');
 
 const DashboardScreen = ({ route, navigation }: any) => {
-  const { user, setUser } = useUser();
+  const { user, setUser, quoteNotificationShown, setQuoteNotificationShown } = useUser();
   const { theme } = useTheme();
   
   const [showCalendar, setShowCalendar] = useState(false);
@@ -25,10 +26,20 @@ const DashboardScreen = ({ route, navigation }: any) => {
   const [allAssessments, setAllAssessments] = useState([]); 
   const [latestSeverity, setLatestSeverity] = useState("Minimal");
   
+  // Motivational Quote Notification States
+  const [showQuoteNotification, setShowQuoteNotification] = useState(false);
+  const [currentQuote, setCurrentQuote] = useState<{ text: string; author: string }>({
+    text: '',
+    author: ''
+  });
+  
   // Emergency States
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [timer, setTimer] = useState(30);
   const timerRef = useRef(null);
+
+  // New Custom Helpline Popup State
+  const [showHelplineModal, setShowHelplineModal] = useState(false);
 
   const [chartData, setChartData] = useState({
     labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
@@ -64,118 +75,82 @@ const DashboardScreen = ({ route, navigation }: any) => {
     setChartData({ labels, datasets: [{ data: scores }] });
   }, []);
 
-  // --- EMERGENCY ACTION LOGIC ---
+  // --- EMERGENCY ACTION LOGIC (AUTO-SEND WITHOUT USER INTERACTION) ---
   const handleEmergencyAction = useCallback(async () => {
     try {
-      console.log("🚨 EMERGENCY ACTION TRIGGERED - Fetching location...");
+      console.log("🚨 Starting automatic emergency alert process...");
       
       if (Platform.OS === 'android') {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
         );
         if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          Alert.alert("Permission Denied", "Cannot send location without permission.");
-          return;
+          console.log("⚠️ Location permission denied - proceeding without location");
         }
       }
 
-      const location = await GetLocation.getCurrentPosition({
-        enableHighAccuracy: true,
-        timeout: 20000,
-      });
+      let locationUrl = "Location unavailable";
+      try {
+        const location = await GetLocation.getCurrentPosition({
+          enableHighAccuracy: true,
+          timeout: 20000,
+        });
+        locationUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
+      } catch (locError) {
+        console.log("⚠️ Could not get location:", locError.message);
+      }
 
-      console.log("📍 Location obtained:", location.latitude, location.longitude);
-
-      // Google Maps Link
-      const locationUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
-      const message = `🚨 EMERGENCY ALERT: MindGuard AI detected a critical emotional state for ${displayName}. \n\nUser may need immediate assistance.`;
+      const message = `🚨 EMERGENCY ALERT: MindGuard AI detected a critical emotional state for ${displayName}.`;
 
       const currentUser = Array.isArray(user) ? user[0] : user;
+      const userId = currentUser?.id || currentUser?._id;
       const g1 = currentUser?.guardianOne;
       const g2 = currentUser?.guardianTwo;
       
-      console.log("Guardian 1:", g1);
-      console.log("Guardian 2:", g2);
-
-      const guardians = [g1, g2].filter(n => n && n.toString().trim() !== "");
+      const numbers = [g1, g2].filter(n => n && n.toString().trim() !== "");
       
-      if (guardians.length === 0) {
+      if (numbers.length === 0) {
         Alert.alert("Emergency", "Guardian numbers not found! Please update Profile.");
-        setShowEmergencyModal(false);
-        setTimer(30);
         return;
       }
 
-      // Format phone numbers for API
-      const formatPhoneForAPI = (phone: string) => {
-        const cleaned = phone.replace(/[^0-9]/g, '');
-        if (cleaned.startsWith('03')) {
-          return '+92' + cleaned.substring(1); // 0300... -> +92300...
-        } else if (cleaned.startsWith('3')) {
-          return '+92' + cleaned;
-        }
-        return '+92' + cleaned;
-      };
-
-      const formattedGuardians = guardians.map(g => formatPhoneForAPI(g.toString()));
-      
-      console.log("📤 Calling backend emergency endpoint...");
-
-      // Call backend to send emergency alert automatically
-      const response = await axios.post(
-        'http://192.168.1.46:5000/api/send-emergency-alert',
-        {
-          userId: currentUser?.id || currentUser?._id,
-          guardianNumbers: formattedGuardians,
-          message: message,
-          location: locationUrl
-        }
-      );
-
-      console.log("✅ Emergency Response:", response.data);
+      console.log("📤 Sending emergency alert via backend...");
+      const response = await axios.post('http://192.168.18.121:5000/api/send-emergency-alert', {
+        userId,
+        guardianNumbers: numbers,
+        message,
+        location: locationUrl
+      });
 
       if (response.data.success) {
-        Alert.alert(
-          "🚨 Emergency Activated", 
-          `✅ Guardians have been notified!\n\n${response.data.message}\n\nSent to: ${response.data.sentCount} guardian(s)`
-        );
+        console.log("✅ Emergency alert sent successfully!");
+        Alert.alert("Alert Sent", `Guardian(s) notified: ${response.data.sentCount} message(s) sent`);
       } else {
-        Alert.alert(
-          "Alert Sent", 
-          `Your guardians will receive your location: ${locationUrl}`
-        );
+        console.log("⚠️ Alert sent in demo mode:", response.data.message);
       }
-      
     } catch (error) {
       console.log("❌ Emergency Error:", error);
-      Alert.alert("Error", "Failed to send emergency. Check GPS and try again.");
+      Alert.alert("Error", "Failed to send emergency alert. Check your connection.");
     } finally {
       setShowEmergencyModal(false);
       setTimer(30);
     }
   }, [user, displayName]);
 
-  // --- DATA FETCHING (Guardian Support Included) ---
+  // --- DATA FETCHING (Guardian Support & Base IP Configuration) ---
   const fetchAllData = useCallback(async () => {
     const userId = user?.id || user?._id || (Array.isArray(user) && user[0]?._id);
     if (!userId) return;
 
     try {
       setLoading(true);
-      const statsRes = await axios.get(`http://192.168.1.46:5000/api/get-weekly-stats/${userId}`);
+      const statsRes = await axios.get(`http://192.168.18.121:5000/api/get-weekly-stats/${userId}`);
       
-      // Fetching Profile to ensure Guardian numbers are in context
-      const userProfileRes = await axios.get(`http://192.168.1.46:5000/api/users/${userId}`).catch((err) => {
-        console.log("Profile fetch failed:", err.message);
-        return null;
-      });
+      const userProfileRes = await axios.get(`http://192.168.18.121:5000/api/users/${userId}`).catch(() => null);
 
-      if (userProfileRes?.data?.user) {
-        // Update user context with latest guardian numbers from DB
-        const userData = userProfileRes.data.user;
-        if (userData.guardianOne !== user?.guardianOne || userData.guardianTwo !== user?.guardianTwo) {
-          console.log("Updating user with guardians:", userData.guardianOne, userData.guardianTwo);
-          setUser({ ...user, ...userData });
+      if (userProfileRes?.data) {
+        if (userProfileRes.data.guardianOne !== user?.guardianOne) {
+            setUser({ ...user, ...userProfileRes.data });
         }
       }
 
@@ -187,7 +162,6 @@ const DashboardScreen = ({ route, navigation }: any) => {
         setLatestSeverity(severity);
         
         if (severity.toLowerCase().includes('severe')) {
-          console.log("🚨 SEVERE CONDITION DETECTED - Showing emergency modal");
           setTimer(30);
           setShowEmergencyModal(true);
         }
@@ -198,7 +172,7 @@ const DashboardScreen = ({ route, navigation }: any) => {
     } finally {
       setLoading(false);
     }
-  }, [user?.id, user?._id, updateChartWithWeekly]); // Corrected dependency for Loop Fix
+  }, [user?.id, user?._id, updateChartWithWeekly]);
 
   // --- EFFECTS ---
   useEffect(() => {
@@ -214,12 +188,50 @@ const DashboardScreen = ({ route, navigation }: any) => {
     fetchAllData(); 
   }, [fetchAllData]);
 
+  // --- MOTIVATIONAL QUOTE NOTIFICATION (ONCE PER SESSION) ---
+  useEffect(() => {
+    const fetchAndShowMotivationalQuote = async () => {
+      try {
+        if (quoteNotificationShown) {
+          console.log('✅ Quote already shown in this session');
+          return;
+        }
+
+        console.log('📖 Fetching motivational quote...');
+        const response = await axios.get('http://192.168.18.121:5000/api/quotes/random');
+
+        if (response.data.success && response.data.data) {
+          const quote = response.data.data;
+          console.log('✅ Quote fetched:', quote.text);
+
+          setCurrentQuote({
+            text: quote.text,
+            author: quote.author || 'MindGuard Team'
+          });
+
+          setTimeout(() => {
+            setShowQuoteNotification(true);
+            console.log('🎯 Showing quote notification after 5 second delay');
+          }, 5000);
+
+          setQuoteNotificationShown(true);
+        }
+      } catch (error) {
+        console.log('⚠️ Could not fetch quote:', error.message);
+      }
+    };
+
+    if (user && !quoteNotificationShown) {
+      fetchAndShowMotivationalQuote();
+    }
+  }, [user, quoteNotificationShown, setQuoteNotificationShown]);
+
   // --- UI LOGIC ---
   const getDynamicData = () => {
     const level = latestSeverity.toLowerCase();
     if (level.includes('severe')) {
       return {
-        stress: "High Stress", sleep: "5h 20m",
+        stress: "High Stress",
         recs: [
           { id: '1', title: 'Consult Expert', sub: 'Talk to a specialist now', icon: 'medical', bgColor: '#FEE2E2' },
           { id: '2', title: 'Deep Breathing', sub: 'Urgent stress relief', icon: 'leaf', bgColor: '#FEE2E2' },
@@ -228,7 +240,7 @@ const DashboardScreen = ({ route, navigation }: any) => {
       };
     } else if (level.includes('moderate')) {
       return {
-        stress: "Moderate", sleep: "6h 45m",
+        stress: "Moderate",
         recs: [
           { id: '1', title: 'Yoga Session', sub: 'Balance your emotions', icon: 'body', bgColor: '#FEF3C7' },
           { id: '2', title: 'Journaling', sub: 'Write down your thoughts', icon: 'journal', bgColor: '#FEF3C7' },
@@ -237,7 +249,7 @@ const DashboardScreen = ({ route, navigation }: any) => {
       };
     } else if (level.includes('mild')) {
       return {
-        stress: "Mild", sleep: "7h 10m",
+        stress: "Mild",
         recs: [
           { id: '1', title: 'Evening Walk', sub: 'Fresh air for clarity', icon: 'walk', bgColor: '#E0F2FE' },
           { id: '2', title: 'Calm Music', sub: 'Relaxing lo-fi beats', icon: 'musical-notes', bgColor: '#E0F2FE' },
@@ -246,7 +258,7 @@ const DashboardScreen = ({ route, navigation }: any) => {
       };
     } else {
       return {
-        stress: "Calm", sleep: "8h 15m",
+        stress: "Calm",
         recs: [
           { id: '1', title: 'Deep Sleep', sub: 'Maintain your cycle', icon: 'moon', bgColor: '#DCFCE7' },
           { id: '2', title: 'Morning Focus', sub: 'Keep the momentum', icon: 'sunny', bgColor: '#DCFCE7' },
@@ -277,10 +289,32 @@ const DashboardScreen = ({ route, navigation }: any) => {
     }
   };
 
+  // --- CANCEL EMERGENCY ACTION (SHOW CUSTOM HIGH-QUALITY DESIGN POPUP) ---
+  const handleCancelAlertTrigger = () => {
+    clearTimeout(timerRef.current);
+    setShowEmergencyModal(false);
+    setTimer(30);
+    // Smooth custom UI overlay trigger
+    setTimeout(() => {
+      setShowHelplineModal(true);
+    }, 400);
+  };
+
   return (
     <LinearGradient colors={[theme.primary, theme.secondary, theme.background]} style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
       
+      {/* Motivational Quote Notification - appears from top */}
+      {showQuoteNotification && currentQuote.text && (
+        <MotivationalNotification
+          quote={currentQuote.text}
+          author={currentQuote.author}
+          onDismiss={() => setShowQuoteNotification(false)}
+          autoHideDelay={8000}
+        />
+      )}
+      
+      {/* 1. MAIN EMERGENCY COUNTDOWN MODAL */}
       <Modal visible={showEmergencyModal} transparent animationType="fade">
         <View style={styles.emergencyOverlay}>
           <LinearGradient colors={['white', '#FFF5F5']} style={styles.emergencyCard}>
@@ -290,7 +324,7 @@ const DashboardScreen = ({ route, navigation }: any) => {
             
             <Text style={[styles.emergencyTitle, {color: theme.primary}]}>Critical Alert Detected</Text>
             <Text style={styles.emergencyDesc}>
-              We noticed you're feeling very low. MindGuard will notify your guardians with your location in:
+              We detected a critical emotional state. We'll automatically notify your guardians with your location in:
             </Text>
             
             <View style={[styles.timerCircle, {borderColor: theme.secondary}]}>
@@ -301,13 +335,73 @@ const DashboardScreen = ({ route, navigation }: any) => {
             <TouchableOpacity 
               activeOpacity={0.8}
               style={[styles.imFineBtn, {backgroundColor: theme.secondary}]} 
-              onPress={() => { setShowEmergencyModal(false); clearTimeout(timerRef.current); }}
+              onPress={handleCancelAlertTrigger}
             >
-              <Text style={styles.imFineText}>I AM OKAY, DISMISS</Text>
+              <Text style={styles.imFineText}>CANCEL ALERT</Text>
             </TouchableOpacity>
             
-            <Text style={styles.autoNote}>Automatic alert for your safety</Text>
+            <Text style={styles.autoNote}>Auto-sending alert to guardians...</Text>
           </LinearGradient>
+        </View>
+      </Modal>
+
+      {/* 2. BRAND NEW CUSTOM DESIGN HIGH-QUALITY HELPLINE POPUP */}
+      <Modal visible={showHelplineModal} transparent animationType="slide">
+        <View style={styles.customPopupOverlay}>
+          <View style={styles.customPopupCard}>
+            <View style={styles.customPopupHeader}>
+              <View style={styles.heartIconCircle}>
+                <Icon name="heart" size={30} color="#EF4444" />
+              </View>
+              <Text style={[styles.customPopupTitle, {color: theme.primary}]}>We Care About You</Text>
+              <Text style={styles.customPopupSub}>If things feel heavy, instant institutional support is right here for you:</Text>
+            </View>
+
+            {/* Helpline Row 1: Edhi */}
+            <View style={styles.helplineRowItem}>
+              <View style={styles.helplineBadgeBox}>
+                <Icon name="pulse-outline" size={22} color={theme.primary} />
+              </View>
+              <View style={{flex: 1, marginLeft: 12}}>
+                <Text style={styles.helplineLabelName}>Edhi Ambulance Helpline</Text>
+                <Text style={[styles.helplineActualNumber, {color: theme.secondary}]}>Dial: 115</Text>
+              </View>
+            </View>
+
+            {/* Helpline Row 2: Rescue 1122 */}
+            <View style={styles.helplineRowItem}>
+              <View style={styles.helplineBadgeBox}>
+                <Icon name="shield-checkmark-outline" size={22} color={theme.primary} />
+              </View>
+              <View style={{flex: 1, marginLeft: 12}}>
+                <Text style={styles.helplineLabelName}>Punjab Emergency Rescue</Text>
+                <Text style={[styles.helplineActualNumber, {color: theme.secondary}]}>Dial: 1122</Text>
+              </View>
+            </View>
+
+            {/* Action Buttons Section */}
+            <View style={styles.popupActionContainer}>
+              <TouchableOpacity 
+                activeOpacity={0.8}
+                style={[styles.popupCallActionBtn, {backgroundColor: theme.primary}]}
+                onPress={() => {
+                  setShowHelplineModal(false);
+                  Linking.openURL('tel:1122');
+                }}
+              >
+                <Icon name="call" size={18} color="white" style={{marginRight: 8}} />
+                <Text style={styles.popupCallActionText}>CALL RESCUE 1122</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                activeOpacity={0.7}
+                style={styles.popupDismissActionBtn}
+                onPress={() => setShowHelplineModal(false)}
+              >
+                <Text style={[styles.popupDismissActionText, {color: theme.primary}]}>I'm Okay Now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -328,17 +422,19 @@ const DashboardScreen = ({ route, navigation }: any) => {
           </LinearGradient>
         </TouchableOpacity>
 
+        {/* FULL WIDTH CONDITION CARD */}
         <View style={styles.infoRow}>
-          <View style={styles.infoCardSolid}>
-            <MCOIcon name="moon-waning-crescent" size={28} color={theme.secondary} />
-            <Text style={styles.infoLabel}>Sleep Status:</Text>
-            <Text style={[styles.infoValue, {color: theme.primary}]}>{dynamicContent.sleep}</Text>
-          </View>
-          <View style={[styles.infoCardSolid, { backgroundColor: theme.secondary }]}>
-            <MCOIcon name="chart-line-variant" size={28} color="white" />
-            <Text style={styles.stressLabel}>Condition:</Text>
+          <LinearGradient 
+            colors={[theme.secondary, theme.primary]} 
+            start={{x: 0, y: 0}} end={{x: 1, y: 0}}
+            style={styles.infoCardFullWidth}
+          >
+            <View style={styles.conditionHeader}>
+              <MCOIcon name="chart-line-variant" size={32} color="white" />
+              <Text style={styles.stressLabel}>Current Condition</Text>
+            </View>
             <Text style={styles.stressValue}>{dynamicContent.stress}</Text>
-          </View>
+          </LinearGradient>
         </View>
 
         <View style={styles.progressHeaderRow}>
@@ -373,9 +469,10 @@ const DashboardScreen = ({ route, navigation }: any) => {
                 fillShadowGradientOpacity: 0.2,
                 propsForDots: { r: "5", strokeWidth: "2", stroke: theme.secondary },
                 propsForBackgroundLines: { strokeDasharray: "5, 5", stroke: "#E2E8F0" },
-                propsForLabels: { fontSize: 10 },
+                propsForLabels: { fontSize: 10, dx: 5 }, 
+                paddingLeft: 35, 
               }}
-              style={{ marginVertical: 8, borderRadius: 16, paddingRight: 45, marginLeft: -15 }}
+              style={{ marginVertical: 8, borderRadius: 16, paddingRight: 45 }}
             />
           )}
         </View>
@@ -403,20 +500,24 @@ const DashboardScreen = ({ route, navigation }: any) => {
           </View>
       </Modal>
 
+      {/* --- BOTTOM CUSTOM TABS --- */}
       <View style={styles.tabContainer}>
         <View style={styles.bottomTabsContainer}>
-          <TouchableOpacity style={styles.tabItem}>
+          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Dashboard')}>
             <Icon name="home" size={24} color={theme.primary} />
             <Text style={[styles.tabLabel, {color: theme.primary}]}>Home</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Chat')}>
+          
+          <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('ChatBot')}>
             <Icon name="chatbubble-outline" size={22} color="#718096" />
             <Text style={styles.tabLabel}>Chat</Text>
           </TouchableOpacity>
+          
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Doctor')}>
             <Icon name="medical-outline" size={24} color="#718096" />
             <Text style={styles.tabLabel}>Doctor</Text>
           </TouchableOpacity>
+          
           <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('Profile')}>
             <Icon name="person-outline" size={22} color="#718096" />
             <Text style={styles.tabLabel}>Profile</Text>
@@ -438,12 +539,11 @@ const styles = StyleSheet.create({
   wellnessTextWrapper: { flex: 1, marginLeft: 15 },
   wellnessTitle: { color: 'white', fontSize: 15, fontWeight: 'bold' },
   wellnessSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12 },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  infoCardSolid: { width: '47%', padding: 20, borderRadius: 24, height: 120, justifyContent: 'space-between', backgroundColor: 'white' },
-  infoLabel: { fontSize: 11, fontWeight: '600' },
-  infoValue: { fontSize: 18, fontWeight: 'bold' },
-  stressLabel: { fontSize: 11, fontWeight: '600', color: 'white' },
-  stressValue: { fontSize: 18, fontWeight: 'bold', color: 'white' },
+  infoRow: { marginTop: 15 },
+  infoCardFullWidth: { width: '100%', padding: 20, borderRadius: 24, height: 110, justifyContent: 'center', elevation: 4 },
+  conditionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
+  stressLabel: { fontSize: 14, fontWeight: '600', color: 'white', marginLeft: 10 },
+  stressValue: { fontSize: 26, fontWeight: 'bold', color: 'white', marginLeft: 42 },
   progressHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 10 },
   progressTitle: { fontSize: 18, fontWeight: 'bold', color: 'white' },
   chartCardSolid: { padding: 15, borderRadius: 25, backgroundColor: 'white', elevation: 4, overflow: 'hidden' },
@@ -472,7 +572,24 @@ const styles = StyleSheet.create({
   secText: { fontSize: 10, fontWeight: 'bold', marginTop: -5 },
   imFineBtn: { width: '100%', paddingVertical: 18, borderRadius: 22, alignItems: 'center', elevation: 5 },
   imFineText: { color: 'white', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 },
-  autoNote: { fontSize: 11, color: '#9CA3AF', marginTop: 15, fontStyle: 'italic' }
+  autoNote: { fontSize: 11, color: '#9CA3AF', marginTop: 15, fontStyle: 'italic' },
+  
+  // BRAND NEW DESIGN STYLES FOR HELPLINE POPUP
+  customPopupOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  customPopupCard: { backgroundColor: 'white', width: '100%', borderRadius: 32, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 24 },
+  customPopupHeader: { alignItems: 'center', marginBottom: 20 },
+  heartIconCircle: { width: 65, height: 65, borderRadius: 32.5, backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center', marginBottom: 14 },
+  customPopupTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
+  customPopupSub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 18, paddingHorizontal: 10 },
+  helplineRowItem: { flexDirection: 'row', alignItems: 'center', width: '100%', backgroundColor: '#F8FAFC', padding: 14, borderRadius: 20, marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  helplineBadgeBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.9)', justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  helplineLabelName: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
+  helplineActualNumber: { fontSize: 13, fontWeight: '700', marginTop: 1 },
+  popupActionContainer: { width: '100%', marginTop: 10 },
+  popupCallActionBtn: { width: '100%', height: 56, borderRadius: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 3 },
+  popupCallActionText: { color: 'white', fontSize: 15, fontWeight: 'bold', letterSpacing: 0.5 },
+  popupDismissActionBtn: { width: '100%', height: 50, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
+  popupDismissActionText: { fontSize: 14, fontWeight: '700' }
 });
 
 export default DashboardScreen;
