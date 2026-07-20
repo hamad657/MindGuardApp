@@ -63,7 +63,7 @@ const AssessmentScreen = ({ navigation }: any) => {
     setActiveCard(activeCard === card ? null : card);
   };
 
-  const handleFinalSubmit = async () => {
+ const handleFinalSubmit = async () => {
     // 1. Validation check
     if (phqAnswers.includes(-1) || gadAnswers.includes(-1)) {
       Alert.alert("Incomplete", "Please answer all questions in both PHQ-9 and GAD-7 sections.");
@@ -108,6 +108,23 @@ const AssessmentScreen = ({ navigation }: any) => {
 
       console.log("📤 Sending to backend:", payload);
 
+      // --- 🎯 NAVIGATION LOGIC FUNCTION BASED ON SEVERITY ---
+      const navigateToDashboardWithParams = () => {
+        const finalSeverity = phqResult.label || "Minimal";
+        
+        if (finalSeverity.toLowerCase().includes('severe')) {
+          console.log("🚨 Severe condition detected! Navigating with emergency params...");
+          navigation.navigate('Dashboard', { 
+            severity: finalSeverity, 
+            showEmergency: true,
+            fromAssessment: true 
+          });
+        } else {
+          console.log("✅ Normal condition. Navigating regularly...");
+          navigation.navigate('Dashboard', { fromAssessment: true });
+        }
+      };
+
       try {
         const response = await axios.post('http://192.168.18.121:5000/api/save-full-assessment', payload);
         
@@ -116,7 +133,7 @@ const AssessmentScreen = ({ navigation }: any) => {
           Alert.alert(
             "✅ Assessment Complete",
             `Results ${predictionType}:\n\nPHQ-9: ${phqResult.label}\nGAD-7: ${gadResult.label}`,
-            [{ text: "OK", onPress: () => navigation.navigate('Dashboard') }]
+            [{ text: "OK", onPress: () => navigateToDashboardWithParams() }] // 🔥 Fixed here
           );
         }
       } catch (apiErr: any) {
@@ -127,7 +144,7 @@ const AssessmentScreen = ({ navigation }: any) => {
         Alert.alert(
           "Assessment Complete", 
           `Results ${predictionType}:\n\nPHQ-9: ${phqResult.label}\nGAD-7: ${gadResult.label}\n\n⚠️ Note: Data will be saved when internet is available.`,
-          [{ text: "OK", onPress: () => navigation.navigate('Dashboard') }]
+          [{ text: "OK", onPress: () => navigateToDashboardWithParams() }] // 🔥 Fixed here too
         );
       }
 

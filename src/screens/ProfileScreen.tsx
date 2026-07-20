@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
+ import { 
   StyleSheet, View, Text, TouchableOpacity, ScrollView, 
   Image, StatusBar, Alert, Modal, Dimensions, TextInput, ActivityIndicator
 } from 'react-native';
@@ -11,6 +11,9 @@ import { launchImageLibrary, ImageLibraryOptions } from 'react-native-image-pick
 // Context
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
+
+// Components
+import EmergencyContactsModal from '../components/EmergencyContactsModal';
 
 // API Functions
 import { 
@@ -32,16 +35,6 @@ const customThemes = {
   MidnightZen: { name: 'Midnight Zen', primary: '#6D597A', secondary: '#B56576', background: '#F8F7FF', patternIcon: 'moon-waning-crescent' }
 };
 
-// Pakistan Helpline Numbers
-const pakistanHelplines = [
-  { name: 'AASRA Crisis Support', number: '0300-8259999', description: 'Mental health crisis support' },
-  { name: 'Pakistan Red Crescent', number: '115', description: 'Medical emergency' },
-  { name: 'Doctors Hospital Lahore', number: '042-3771-6200', description: 'Psychiatry services' },
-  { name: 'Agha Khan Hospital Karachi', number: '021-3486-4000', description: 'Mental health services' },
-  { name: 'Shaukat Khanum Hospital', number: '021-3489-0000', description: 'Emergency services' },
-  { name: 'Emergency Services', number: '112', description: 'National emergency number' }
-];
-
 const ProfileScreen = ({ navigation }: any) => {
   const { user, setUser } = useUser();
   const { theme, setTheme } = useTheme();
@@ -49,7 +42,7 @@ const ProfileScreen = ({ navigation }: any) => {
   const [isThemeModalVisible, setThemeModalVisible] = useState(false); 
   const [isEditGuardianModalVisible, setEditGuardianModalVisible] = useState(false);
   const [isPasswordModalVisible, setPasswordModalVisible] = useState(false);
-  const [isHelpCenterModalVisible, setHelpCenterModalVisible] = useState(false);
+  const [showEmergencyContactsModal, setShowEmergencyContactsModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
@@ -139,11 +132,15 @@ const ProfileScreen = ({ navigation }: any) => {
     try {
       setLoading(true);
       console.log('📤 Updating guardians...');
-      const response = await updateUserProfile(userId, guardianOne, guardianTwo);
+      
+      const formattedG1 = guardianOne.replace(/\D/g, '').replace(/^0/, '+92');
+      const formattedG2 = guardianTwo.replace(/\D/g, '').replace(/^0/, '+92');
+      
+      const response = await updateUserProfile(userId, formattedG1, formattedG2);
 
       if (response.success) {
         console.log('✅ Guardians updated successfully');
-        setUser({ ...user, guardianOne, guardianTwo });
+        setUser({ ...user, guardianOne: formattedG1, guardianTwo: formattedG2 });
         Alert.alert("Success", "Guardian numbers updated successfully!");
         setEditGuardianModalVisible(false);
       } else {
@@ -170,13 +167,11 @@ const ProfileScreen = ({ navigation }: any) => {
       return;
     }
 
-    // 1. Restriction: At least 8 characters long
     if (newPassword.length < 8) {
       Alert.alert("Weak Password", "New password must be at least 8 characters long.");
       return;
     }
 
-    // 2. Restriction: MUST contain at least one special character
     const specialCharRegex = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~`]/;
     if (!specialCharRegex.test(newPassword)) {
       Alert.alert(
@@ -403,34 +398,12 @@ const ProfileScreen = ({ navigation }: any) => {
         </View>
       </Modal>
 
-      {/* --- Help Center Modal --- */}
-      <Modal animationType="slide" transparent={true} visible={isHelpCenterModalVisible}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.editModalContent}>
-            <Text style={[styles.modalTitle, {color: theme.primary}]}>Pakistan Helplines</Text>
-            
-            <ScrollView style={styles.helplinesList}>
-              {pakistanHelplines.map((helpline, index) => (
-                <TouchableOpacity key={index} style={styles.helplineCard}>
-                  <Icon name="call" size={20} color={theme.primary} style={{ marginRight: 10 }} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.helplineName}>{helpline.name}</Text>
-                    <Text style={styles.helplineDesc}>{helpline.description}</Text>
-                    <Text style={styles.helplineNumber}>{helpline.number}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <TouchableOpacity 
-              style={[styles.closeBtn, {backgroundColor: theme.primary}]}
-              onPress={() => setHelpCenterModalVisible(false)}
-            >
-              <Text style={styles.closeBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+      {/* Dynamic Connected Database Emergency Modal */}
+      <EmergencyContactsModal 
+        visible={showEmergencyContactsModal}
+        onClose={() => setShowEmergencyContactsModal(false)}
+        theme={theme}
+      />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.profileHeader}>
@@ -440,8 +413,8 @@ const ProfileScreen = ({ navigation }: any) => {
               <Icon name="camera" size={16} color="white" />
             </View>
           </TouchableOpacity>
-          <Text style={styles.userName}>{userDataObj?.name || 'User'}</Text>
-          <Text style={styles.userEmail}>{userDataObj?.email || 'No email'}</Text>
+          <Text style={styles.userName}> {userDataObj?.name || 'User'} </Text>
+          <Text style={styles.userEmail}> {userDataObj?.email || 'No email'} </Text>
         </View>
 
         <View style={styles.settingsContainer}>
@@ -453,7 +426,9 @@ const ProfileScreen = ({ navigation }: any) => {
 
           <Text style={styles.supportTitle}>Support</Text>
           <View style={styles.whiteCard}>
-            <SettingItem icon="help-circle-outline" title="Help Center" onPress={() => setHelpCenterModalVisible(true)} />
+            {/* Ab sirf Help Center reh gaya hai jo click karne par DB numbers show karega */}
+            <SettingItem icon="help-circle-outline" title="Help Center" onPress={() => setShowEmergencyContactsModal(true)} />
+            
             <TouchableOpacity style={styles.settingRow} onPress={handleLogout} activeOpacity={0.7}>
               <View style={[styles.settingIconBox, { backgroundColor: '#E53E3E' + '15' }]}>
                 <Icon name="log-out-outline" size={22} color="#E53E3E" />
@@ -538,11 +513,6 @@ const styles = StyleSheet.create({
   saveBtn: { marginTop: 10, paddingVertical: 15, borderRadius: 15, alignItems: 'center' },
   saveBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 },
   cancelLink: { alignSelf: 'center', marginTop: 15 },
-  helplinesList: { maxHeight: height * 0.4, marginBottom: 15 },
-  helplineCard: { flexDirection: 'row', backgroundColor: '#F7FAFC', padding: 15, borderRadius: 12, marginBottom: 10, alignItems: 'center' },
-  helplineName: { fontSize: 14, fontWeight: '600', color: '#2D3748' },
-  helplineDesc: { fontSize: 12, color: '#718096', marginTop: 2 },
-  helplineNumber: { fontSize: 13, fontWeight: '700', color: '#2D3748', marginTop: 4 }
 });
 
 export default ProfileScreen;

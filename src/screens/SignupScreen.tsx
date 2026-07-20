@@ -50,9 +50,9 @@ const SignupScreen = ({ navigation }: any) => {
     }
 
     try {
-      // Clean phone numbers: "0300-6038569" -> "03006038569"
-      const cleanG1 = g1.replace('-', '');
-      const cleanG2 = g2.replace('-', '');
+      // Clean phone numbers: "0300-6038569" -> "03006038569" -> "+923006038569"
+      const cleanG1 = g1.replace('-', '').replace(/^0/, '+92');
+      const cleanG2 = g2.replace('-', '').replace(/^0/, '+92');
 
       const response = await axios.post('http://192.168.18.121:5000/api/signup', {
         name, email, password, guardianOne: cleanG1, guardianTwo: cleanG2

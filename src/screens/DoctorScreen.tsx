@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, View, Text, TouchableOpacity, ScrollView, 
-  Image, StatusBar, Modal, Linking, Alert, Pressable, Dimensions 
+  Image, StatusBar, Modal, Linking, Alert, Pressable, Dimensions, ActivityIndicator 
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/Ionicons'; 
@@ -11,90 +11,126 @@ import { useTheme } from '../context/ThemeContext';
 const { width } = Dimensions.get('window');
 
 interface Doctor {
-  id: string;
+  _id?: string;
+  id?: string;
   name: string;
   category: string;
-  spec: string;
-  img: string;
+  spec?: string;
+  img?: string;
   phone: string;
-  rating: number;
-  reviews: number;
-  experience: string;
-  bio: string;
+  rating?: number;
+  reviews?: number;
+  experience?: number;
+  bio?: string;
+  qualification?: string;
+  city?: string;
+  gender?: string;
 }
 
 const maleImg = 'https://pngimg.com/uploads/doctor/doctor_PNG15988.png';
-const femaleImg = 'https://api.removal.ai/download/g3/preview/61854a51-68fa-4ba6-81b2-df06585ff612.png';
+const femaleImg = 'https://static.vecteezy.com/system/resources/thumbnails/041/409/047/small/ai-generated-a-female-doctor-with-a-stethoscope-isolated-on-transparent-background-free-png.png';
 
-// 8 Pure Psychology and Mental Health Sub-fields
+// Categories matching Backend exactly
 const categories = [
-  { id: '1', name: 'Clinical Psych', icon: 'brain' },
-  { id: '2', name: 'Counseling', icon: 'account-voice' },
-  { id: '3', name: 'Child Psych', icon: 'baby-face-outline' },
-  { id: '4', name: 'Neuropsych', icon: 'head-cog-outline' },
-  { id: '5', name: 'Therapist', icon: 'emoticon-happy-outline' },
-  { id: '6', name: 'Psychiatry', icon: 'pill' },
-  { id: '7', name: 'Addiction Specialist', icon: 'bottle-wine-outline' },
-  { id: '8', name: 'Trauma Therapy', icon: 'heart-broken' },
-];
-
-const doctorsData: Doctor[] = [
-  // Clinical Psych (Cat 1)
-  { id: '1a', name: 'Dr. Natalya', category: '1', spec: 'Mental Specialist', img: femaleImg, phone: '03177571221', rating: 4.9, reviews: 120, experience: '12 years', bio: 'Expert in stress management and severe anxiety disorders.' },
-  { id: '1b', name: 'Dr. Sarah Khan', category: '1', spec: 'Clinical Psychologist', img: femaleImg, phone: '03001112233', rating: 4.7, reviews: 85, experience: '8 years', bio: 'CBT Specialist focusing on depression and mood disorders.' },
-  { id: '1c', name: 'Dr. Usman Arshad', category: '1', spec: 'Mental Health Consultant', img: maleImg, phone: '03004445566', rating: 4.8, reviews: 90, experience: '10 years', bio: 'Expert in emotional regulation and clinical assessments.' },
-
-  // Counseling (Cat 2)
-  { id: '2a', name: 'Dr. Brian Cumin', category: '2', spec: 'Guidance Counselor', img: maleImg, phone: '03046563387', rating: 4.9, reviews: 150, experience: '15 years', bio: 'Career guidance, life coaching, and personal development expert.' },
-  { id: '2b', name: 'Dr. Amna Ali', category: '2', spec: 'Relationship Counselor', img: femaleImg, phone: '03210001112', rating: 4.6, reviews: 70, experience: '9 years', bio: 'Specialist in family issues, marriage counseling, and relationship advice.' },
-  { id: '2c', name: 'Dr. Bilal Khan', category: '2', spec: 'Grief Counselor', img: maleImg, phone: '03213334445', rating: 4.8, reviews: 110, experience: '11 years', bio: 'Helping patients cope with emotional trauma, loss, and grief.' },
-
-  // Child Psych (Cat 3)
-  { id: '3a', name: 'Dr. Robert Brown', category: '3', spec: 'Pediatric Psychologist', img: maleImg, phone: '03009876543', rating: 4.7, reviews: 100, experience: '10 years', bio: 'Expert in child behavior, ADHD management, and autism tracking.' },
-  { id: '3b', name: 'Dr. Zainab', category: '3', spec: 'Child Development Expert', img: femaleImg, phone: '03001234567', rating: 4.5, reviews: 60, experience: '7 years', bio: 'Specializing in adolescent issues and childhood anxiety.' },
-  { id: '3c', name: 'Dr. Farooq', category: '3', spec: 'School Psychologist', img: maleImg, phone: '03007654321', rating: 4.8, reviews: 130, experience: '14 years', bio: 'Focuses on student learning, social development, and behavior plans.' },
-
-  // Neuropsych (Cat 4)
-  { id: '4a', name: 'Dr. James Wilson', category: '4', spec: 'Neuropsychologist', img: maleImg, phone: '03001234567', rating: 4.8, reviews: 130, experience: '11 years', bio: 'Expert in brain-behavior relationships and cognitive assessments.' },
-  { id: '4b', name: 'Dr. Hina Mani', category: '4', spec: 'Cognitive Neuroscientist', img: femaleImg, phone: '03331112223', rating: 4.7, reviews: 95, experience: '10 years', bio: 'Nerve health, memory retention, and brain wellness expert.' },
-  { id: '4c', name: 'Dr. Kamran Rao', category: '4', spec: 'Neuro Cognitive Specialist', img: maleImg, phone: '03338877665', rating: 5.0, reviews: 200, experience: '20 years', bio: 'Leading clinician in handling stroke recovery and head injury rehab.' },
-
-  // Therapist (Cat 5)
-  { id: '5a', name: 'Dr. Emily Chen', category: '5', spec: 'CBT Therapist', img: femaleImg, phone: '03177571221', rating: 4.6, reviews: 85, experience: '8 years', bio: 'Cognitive Behavioral Therapy expert specializing in mind wellness.' },
-  { id: '5b', name: 'Dr. Ali Raza', category: '5', spec: 'Hypnotherapist', img: maleImg, phone: '03214445556', rating: 4.9, reviews: 140, experience: '12 years', bio: 'Expert in subconscious relaxation and phobia treatments.' },
-  { id: '5c', name: 'Dr. Sana', category: '5', spec: 'Behavioral Therapist', img: femaleImg, phone: '03219998887', rating: 4.7, reviews: 110, experience: '9 years', bio: 'Specializes in obsessive-compulsive habits and anger issues.' },
-
-  // Orthopedics -> Psychiatry (Cat 6)
-  { id: '6a', name: 'Dr. Fleece Marigold', category: '6', spec: 'Neuro-Psychiatrist', img: femaleImg, phone: '03005678901', rating: 4.8, reviews: 95, experience: '10 years', bio: 'Expert in clinical psychiatry and medical treatments for mental wellness.' },
-  { id: '6b', name: 'Dr. Hassan', category: '6', spec: 'Adult Psychiatrist', img: maleImg, phone: '03002223334', rating: 4.7, reviews: 80, experience: '11 years', bio: 'Medical prescriptions and long-term diagnostic tracking specialist.' },
-  { id: '6c', name: 'Dr. Maria', category: '6', spec: 'Adolescent Psychiatrist', img: femaleImg, phone: '03005554443', rating: 4.9, reviews: 120, experience: '13 years', bio: 'Specializes in young adult mental health and biological treatments.' },
-
-  // Dermatology -> Addiction Specialist (Cat 7)
-  { id: '7a', name: 'Dr. Lisa Anderson', category: '7', spec: 'Addiction Counselor', img: femaleImg, phone: '03004567890', rating: 4.8, reviews: 120, experience: '12 years', bio: 'Substance abuse recovery and rehabilitation expert.' },
-  { id: '7b', name: 'Dr. Ahmed', category: '7', spec: 'Rehab Specialist', img: maleImg, phone: '03006667778', rating: 4.6, reviews: 90, experience: '9 years', bio: 'Laser-focused behavioral rehab and habit tracking techniques.' },
-  { id: '7c', name: 'Dr. Noreen', category: '7', spec: 'Relapse Prevention Expert', img: femaleImg, phone: '03001119992', rating: 4.7, reviews: 110, experience: '10 years', bio: 'Anti-addiction plans and supportive maintenance expert.' },
-
-  // Oncology -> Trauma Therapy (Cat 8)
-  { id: '8a', name: 'Dr. Kashif', category: '8', spec: 'PTSD Specialist', img: maleImg, phone: '03331234567', rating: 4.9, reviews: 150, experience: '18 years', bio: 'Expert in Post-Traumatic Stress Disorder treatments.' },
-  { id: '8b', name: 'Dr. Saira', category: '8', spec: 'Trauma Therapist', img: femaleImg, phone: '03339998887', rating: 4.8, reviews: 130, experience: '15 years', bio: 'EMDR therapy specialist for deep emotional shock recovery.' },
-  { id: '8c', name: 'Dr. Junaid', category: '8', spec: 'Crisis Counselor', img: maleImg, phone: '03335556667', rating: 4.7, reviews: 100, experience: '12 years', bio: 'Immediate support and mental guidance in critical events.' }
+  { id: 'General Psychiatrist', name: 'General Psychiatrist', icon: 'pill' },
+  { id: 'Anxiety Specialist', name: 'Anxiety Specialist', icon: 'emoticon-happy-outline' },
+  { id: 'Depression Specialist', name: 'Depression Specialist', icon: 'brain' },
+  { id: 'Trauma Specialist', name: 'Trauma Specialist', icon: 'heart-broken' },
+  { id: 'Child Psychologist', name: 'Child Psychologist', icon: 'baby-face-outline' },
 ];
 
 const DoctorScreen = ({ navigation }: any) => {
-  const [selectedCat, setSelectedCat] = useState('1');
+  const [selectedCat, setSelectedCat] = useState('General Psychiatrist');
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>([]);
+  const [loading, setLoading] = useState(true);
   const { theme } = useTheme();
 
-  const filteredDoctors = doctorsData.filter(doc => doc.category === selectedCat);
-  const featuredDoctor = filteredDoctors.length > 0 ? filteredDoctors[0] : doctorsData[0];
+  useEffect(() => {
+    fetchDoctorsFromDatabase();
+  }, []);
 
-  const handleWhatsApp = (doctor: Doctor) => {
-    const cleanNumber = doctor.phone.replace(/[^0-9]/g, '');
-    const message = `Assalam-o-Alaikum ${doctor.name}, I want to book an appointment.`;
-    const url = `whatsapp://send?phone=92${cleanNumber.substring(1)}&text=${encodeURIComponent(message)}`;
-    Linking.openURL(url).catch(() => Alert.alert("Error", "WhatsApp not installed"));
+  const fetchDoctorsFromDatabase = async () => {
+    try {
+      const response = await fetch('http://192.168.18.121:5000/api/doctors');
+      const data = await response.json();
+      
+      if (data.success && data.data && data.data.length > 0) {
+        const mappedDoctors = data.data.map((dbDoctor: any) => ({
+          _id: dbDoctor._id,
+          id: dbDoctor._id,
+          name: dbDoctor.name,
+          phone: dbDoctor.phone,
+          spec: dbDoctor.category,
+          category: dbDoctor.category,
+          gender: dbDoctor.gender,
+          img: dbDoctor.gender === 'female' ? femaleImg : maleImg,
+          rating: dbDoctor.rating || 4.8,
+          reviews: 100,
+          experience: dbDoctor.experience || 10,
+          bio: `Expert in ${dbDoctor.category}. Experienced professional with ${dbDoctor.experience || 10} years of practice.`,
+          qualification: dbDoctor.qualification || '',
+          city: dbDoctor.city || '',
+        }));
+        
+        console.log('✅ Doctors loaded from database:', mappedDoctors.length);
+        setAllDoctors(mappedDoctors);
+      } else {
+        console.log('No doctors found or success false in response');
+        setAllDoctors([]);
+      }
+    } catch (error) {
+      console.log('Error fetching doctors:', error);
+      setAllDoctors([]);
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // WhatsApp Redirect Handler
+  const handleWhatsApp = (doctor: Doctor) => {
+    if (!doctor.phone) {
+      Alert.alert("Error", "Doctor's phone number is not available.");
+      return;
+    }
+    // Cleaning number and handling country code safely
+    let cleanNumber = doctor.phone.replace(/[^0-9]/g, '');
+    if (cleanNumber.startsWith('0')) {
+      cleanNumber = '92' + cleanNumber.substring(1);
+    } else if (!cleanNumber.startsWith('92')) {
+      cleanNumber = '92' + cleanNumber;
+    }
+    
+    const message = `Assalam-o-Alaikum ${doctor.name}, I want to book an appointment.`;
+    const url = `whatsapp://send?phone=${cleanNumber}&text=${encodeURIComponent(message)}`;
+    
+    Linking.openURL(url).catch(() => {
+      // Fallback web URL if native WhatsApp protocol fails
+      const webUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
+      Linking.openURL(webUrl).catch(() => {
+        Alert.alert("Error", "Could not open WhatsApp or Web Browser.");
+      });
+    });
+  };
+
+  // Filter doctors by category and select EXACTLY 3 items max
+  const filteredDoctors = allDoctors
+    .filter(doc => doc.category === selectedCat)
+    .slice(0, 3);
+
+  // If no doctor in active category, use first available as fallback for top card safely
+  const featuredDoctor = filteredDoctors.length > 0 ? filteredDoctors[0] : allDoctors[0];
+
+  if (loading) {
+    return (
+      <LinearGradient colors={['#667eea', '#764ba2']} style={styles.container}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="white" />
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient colors={[theme.primary, theme.secondary, theme.background]} style={styles.container}>
@@ -102,26 +138,28 @@ const DoctorScreen = ({ navigation }: any) => {
       
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* FEATURED CARD */}
-        <TouchableOpacity activeOpacity={0.9} style={styles.cardWrapper} onPress={() => { setSelectedDoctor(featuredDoctor); setModalVisible(true); }}>
-          <LinearGradient colors={[theme.secondary, theme.primary]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} style={styles.featuredCard}>
-            <View style={styles.featTextSide}>
-              <Text style={styles.featName}>{featuredDoctor.name}</Text>
-              <Text style={styles.featSpec}>{featuredDoctor.spec}</Text>
-              <View style={styles.timeTag}>
-                <Icon name="time-outline" size={14} color="white" />
-                <Text style={styles.timeText}>Available Today</Text>
+        {featuredDoctor && (
+          <TouchableOpacity activeOpacity={0.9} style={styles.cardWrapper} onPress={() => { setSelectedDoctor(featuredDoctor); setModalVisible(true); }}>
+            <LinearGradient colors={[theme.secondary, theme.primary]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} style={styles.featuredCard}>
+              <View style={styles.featTextSide}>
+                <Text style={styles.featName}>{featuredDoctor.name}</Text>
+                <Text style={styles.featSpec}>{featuredDoctor.spec}</Text>
+                <View style={styles.timeTag}>
+                  <Icon name="time-outline" size={14} color="white" />
+                  <Text style={styles.timeText}>Available Today</Text>
+                </View>
               </View>
-            </View>
-            <Image 
-              source={{ uri: featuredDoctor.img }} 
-              style={[
-                styles.featImage, 
-                featuredDoctor.img === femaleImg && { width: 180, height: 180, bottom: -15, right: -15 } 
-              ]} 
-              resizeMode="contain" 
-            />
-          </LinearGradient>
-        </TouchableOpacity>
+              <Image 
+                source={{ uri: featuredDoctor.img || maleImg }} 
+                style={[
+                  styles.featImage, 
+                  featuredDoctor.gender === 'female' && { width: 180, height: 180, bottom: -15, right: -15 } 
+                ]} 
+                resizeMode="contain" 
+              />
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
 
         <Text style={styles.sectionTitle}>Categories</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
@@ -137,8 +175,8 @@ const DoctorScreen = ({ navigation }: any) => {
 
         <Text style={styles.sectionTitle}>Top Doctors - {categories.find(c => c.id === selectedCat)?.name}</Text>
         {filteredDoctors.map((doc) => (
-          <TouchableOpacity key={doc.id} style={styles.docCard} onPress={() => { setSelectedDoctor(doc); setModalVisible(true); }}>
-            <Image source={{ uri: doc.img }} style={styles.docImg} />
+          <TouchableOpacity key={doc.id || doc._id} style={styles.docCard} onPress={() => { setSelectedDoctor(doc); setModalVisible(true); }}>
+            <Image source={{ uri: doc.img || maleImg }} style={styles.docImg} />
             <View style={styles.docDetails}>
               <Text style={[styles.docName, {color: theme.primary}]}>{doc.name}</Text>
               <Text style={styles.docSpec}>{doc.spec}</Text>
@@ -147,6 +185,9 @@ const DoctorScreen = ({ navigation }: any) => {
             <MCOIcon name="chevron-right" size={24} color="#CBD5E0" />
           </TouchableOpacity>
         ))}
+        {filteredDoctors.length === 0 && (
+          <Text style={{ color: 'white', textAlign: 'center', marginTop: 20, fontStyle: 'italic' }}>No doctors found in this category.</Text>
+        )}
       </ScrollView>
 
       {/* FLOATING TABS */}
@@ -182,11 +223,17 @@ const DoctorScreen = ({ navigation }: any) => {
             <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
               <MCOIcon name="close-circle" size={30} color={theme.primary} />
             </TouchableOpacity>
-            <Image source={{ uri: selectedDoctor?.img }} style={styles.modalDocImg} resizeMode="contain" />
+            <Image source={{ uri: selectedDoctor?.img || maleImg }} style={styles.modalDocImg} resizeMode="contain" />
             <View style={styles.modalPadding}>
                 <Text style={[styles.modalDocName, {color: theme.primary}]}>{selectedDoctor?.name}</Text>
                 <Text style={styles.modalDocSpec}>{selectedDoctor?.spec}</Text>
                 <Text style={styles.modalBio}>{selectedDoctor?.bio}</Text>
+                {selectedDoctor?.phone && (
+                  <View style={styles.phoneSection}>
+                    <Icon name="call" size={16} color={theme.secondary} />
+                    <Text style={[styles.phoneNumber, {color: theme.secondary}]}> {selectedDoctor.phone}</Text>
+                  </View>
+                )}
                 <TouchableOpacity style={[styles.whatsappBtn, {backgroundColor: '#25D366'}]} onPress={() => selectedDoctor && handleWhatsApp(selectedDoctor)}>
                     <MCOIcon name="whatsapp" size={24} color="white" />
                     <Text style={styles.whatsappBtnText}>WhatsApp Appointment</Text>
@@ -235,6 +282,8 @@ const styles = StyleSheet.create({
   modalDocName: { fontSize: 20, fontWeight: 'bold', textAlign: 'center' },
   modalDocSpec: { fontSize: 14, color: '#718096', textAlign: 'center', marginBottom: 10 },
   modalBio: { fontSize: 13, color: '#4A5568', textAlign: 'center', marginBottom: 15 },
+  phoneSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 15 },
+  phoneNumber: { fontSize: 14, fontWeight: '600', marginLeft: 8 },
   whatsappBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 15, marginTop: 10 },
   whatsappBtnText: { color: 'white', fontSize: 14, fontWeight: 'bold', marginLeft: 10 }
 });

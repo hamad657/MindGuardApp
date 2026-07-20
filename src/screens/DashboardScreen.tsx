@@ -36,14 +36,16 @@ const DashboardScreen = ({ route, navigation }: any) => {
   // Emergency States
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [timer, setTimer] = useState(30);
-  const timerRef = useRef(null);
 
-  // New Custom Helpline Popup State
+  // Help Center Modal State
   const [showHelplineModal, setShowHelplineModal] = useState(false);
 
   const [chartData, setChartData] = useState({
     labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    datasets: [{ data: [0, 0, 0, 0, 0, 0, 0] }]
+    datasets: [
+      { data: [0, 0, 0, 0, 0, 0, 0], label: "PHQ-9", color: () => '#EF4444' },
+      { data: [0, 0, 0, 0, 0, 0, 0], label: "GAD-7", color: () => '#3B82F6' }
+    ]
   });
 
   // Safe Name Access
@@ -71,73 +73,82 @@ const DashboardScreen = ({ route, navigation }: any) => {
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       return days[new Date(item.timestamp).getDay()];
     });
-    const scores = sorted.map(item => getSeverityLevel(item.phqSeverity));
-    setChartData({ labels, datasets: [{ data: scores }] });
+    const phqScores = sorted.map(item => getSeverityLevel(item.phqSeverity));
+    const gadScores = sorted.map(item => getSeverityLevel(item.gadSeverity));
+    setChartData({ 
+      labels, 
+      datasets: [
+        { data: phqScores, label: "PHQ-9", color: () => '#EF4444' },
+        { data: gadScores, label: "GAD-7", color: () => '#3B82F6' }
+      ] 
+    });
   }, []);
 
-  // --- EMERGENCY ACTION LOGIC (AUTO-SEND WITHOUT USER INTERACTION) ---
+  // --- EMERGENCY ACTION LOGIC (FIXED BACKDROP STUCK) ---
   const handleEmergencyAction = useCallback(async () => {
     try {
       console.log("🚨 Starting automatic emergency alert process...");
       
+      // Jaise hi trigger ho popup pehle close kar dein taake background task loading UI freeze na kare
+      setShowEmergencyModal(false);
+
       if (Platform.OS === 'android') {
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
         );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          console.log("⚠️ Location permission denied - proceeding without location");
-        }
       }
 
       let locationUrl = "Location unavailable";
       try {
         const location = await GetLocation.getCurrentPosition({
           enableHighAccuracy: true,
-          timeout: 20000,
+          timeout: 5000, // Timeout kam kiya taake freeze na lage
         });
         locationUrl = `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
       } catch (locError) {
         console.log("⚠️ Could not get location:", locError.message);
       }
 
-      const message = `🚨 EMERGENCY ALERT: MindGuard AI detected a critical emotional state for ${displayName}.`;
+      const message = `🚨 EMERGENCY ALERT: MindGuard AI detected a critical emotional state for ${displayName}.\n\nLocation: ${locationUrl}`;
 
       const currentUser = Array.isArray(user) ? user[0] : user;
-      const userId = currentUser?.id || currentUser?._id;
       const g1 = currentUser?.guardianOne;
       const g2 = currentUser?.guardianTwo;
-      
       const numbers = [g1, g2].filter(n => n && n.toString().trim() !== "");
       
       if (numbers.length === 0) {
         Alert.alert("Emergency", "Guardian numbers not found! Please update Profile.");
+        setTimer(30);
         return;
       }
 
-      console.log("📤 Sending emergency alert via backend...");
-      const response = await axios.post('http://192.168.18.121:5000/api/send-emergency-alert', {
-        userId,
-        guardianNumbers: numbers,
-        message,
-        location: locationUrl
-      });
-
-      if (response.data.success) {
-        console.log("✅ Emergency alert sent successfully!");
-        Alert.alert("Alert Sent", `Guardian(s) notified: ${response.data.sentCount} message(s) sent`);
-      } else {
-        console.log("⚠️ Alert sent in demo mode:", response.data.message);
+      let phoneNumber = numbers[0].toString().trim();
+      if (!phoneNumber.startsWith('+')) {
+        phoneNumber = phoneNumber.replace(/\D/g, '').replace(/^0/, '');
+        phoneNumber = '+92' + phoneNumber;
       }
+      
+      const whatsappUrl = `whatsapp://send?phone=${phoneNumber}&text=${encodeURIComponent(message)}`;
+      
+      try {
+        await Linking.openURL(whatsappUrl);
+      } catch (err) {
+        const smsUrl = `sms:${phoneNumber}?body=${encodeURIComponent(message)}`;
+        try {
+          await Linking.openURL(smsUrl);
+        } catch (smsErr) {
+          Alert.alert("Error", "Could not open WhatsApp or SMS");
+        }
+      }
+
     } catch (error) {
       console.log("❌ Emergency Error:", error);
-      Alert.alert("Error", "Failed to send emergency alert. Check your connection.");
     } finally {
-      setShowEmergencyModal(false);
       setTimer(30);
     }
   }, [user, displayName]);
 
-  // --- DATA FETCHING (Guardian Support & Base IP Configuration) ---
+  // --- DATA FETCHING & EMERGENCY CHECK ---
   const fetchAllData = useCallback(async () => {
     const userId = user?.id || user?._id || (Array.isArray(user) && user[0]?._id);
     if (!userId) return;
@@ -145,7 +156,6 @@ const DashboardScreen = ({ route, navigation }: any) => {
     try {
       setLoading(true);
       const statsRes = await axios.get(`http://192.168.18.121:5000/api/get-weekly-stats/${userId}`);
-      
       const userProfileRes = await axios.get(`http://192.168.18.121:5000/api/users/${userId}`).catch(() => null);
 
       if (userProfileRes?.data) {
@@ -157,53 +167,72 @@ const DashboardScreen = ({ route, navigation }: any) => {
       if (statsRes.data.success && statsRes.data.data.length > 0) {
         const sortedData = [...statsRes.data.data].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         setAllAssessments(sortedData);
+        
         const latest = sortedData[sortedData.length - 1];
         const severity = latest.phqSeverity || "Minimal";
         setLatestSeverity(severity);
+        updateChartWithWeekly(sortedData); 
+
+        const hasJustTested = route?.params?.fromAssessment === true || route?.params?.showEmergency === true;
         
-        if (severity.toLowerCase().includes('severe')) {
+        if (hasJustTested && (severity.toLowerCase().includes('severe') || route?.params?.severity?.toLowerCase().includes('severe'))) {
+          console.log("🚨 Severe Condition detected! Triggering popup...");
           setTimer(30);
           setShowEmergencyModal(true);
+          navigation.setParams({ showEmergency: false, severity: undefined, fromAssessment: false });
         }
-        updateChartWithWeekly(sortedData); 
       }
     } catch (err) {
       console.log("Fetch error:", err.message);
     } finally {
       setLoading(false);
     }
-  }, [user?.id, user?._id, updateChartWithWeekly]);
+  }, [user?.id, user?._id, updateChartWithWeekly, route?.params, navigation]);
 
-  // --- EFFECTS ---
+  // --- FALLBACK EFFECT FOR PARAMS ---
   useEffect(() => {
-    if (showEmergencyModal && timer > 0) {
-      timerRef.current = setTimeout(() => setTimer(timer - 1), 1000);
-    } else if (timer === 0 && showEmergencyModal) {
-      handleEmergencyAction();
+    if (route?.params?.showEmergency === true || route?.params?.severity?.toLowerCase().includes('severe')) {
+      setTimer(30);
+      setShowEmergencyModal(true);
+      navigation.setParams({ showEmergency: false, severity: undefined, fromAssessment: false });
     }
-    return () => clearTimeout(timerRef.current);
-  }, [timer, showEmergencyModal, handleEmergencyAction]);
+  }, [route?.params, navigation]);
+
+  // --- 🎯 FIXED EFFECT FOR COUNTDOWN TIMER (FORAN COUNTDOWN SHURU HOGA) ---
+  useEffect(() => {
+    let intervalId = null;
+
+    if (showEmergencyModal && timer > 0) {
+      intervalId = setInterval(() => {
+        setTimer((prevTimer) => {
+          if (prevTimer <= 1) {
+            clearInterval(intervalId);
+            handleEmergencyAction(); 
+            return 0;
+          }
+          return prevTimer - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [showEmergencyModal]); // Optimized dependency matrix to fix freeze issue
 
   useEffect(() => { 
     fetchAllData(); 
   }, [fetchAllData]);
 
-  // --- MOTIVATIONAL QUOTE NOTIFICATION (ONCE PER SESSION) ---
+  // --- MOTIVATIONAL QUOTE NOTIFICATION ---
   useEffect(() => {
     const fetchAndShowMotivationalQuote = async () => {
       try {
-        if (quoteNotificationShown) {
-          console.log('✅ Quote already shown in this session');
-          return;
-        }
+        if (quoteNotificationShown) return;
 
-        console.log('📖 Fetching motivational quote...');
-        const response = await axios.get('http://192.168.18.121:5000/api/quotes/random');
-
+        const response = await axios.get('http://192.168.1.30:5000/api/quotes/random');
         if (response.data.success && response.data.data) {
           const quote = response.data.data;
-          console.log('✅ Quote fetched:', quote.text);
-
           setCurrentQuote({
             text: quote.text,
             author: quote.author || 'MindGuard Team'
@@ -211,7 +240,6 @@ const DashboardScreen = ({ route, navigation }: any) => {
 
           setTimeout(() => {
             setShowQuoteNotification(true);
-            console.log('🎯 Showing quote notification after 5 second delay');
           }, 5000);
 
           setQuoteNotificationShown(true);
@@ -226,7 +254,7 @@ const DashboardScreen = ({ route, navigation }: any) => {
     }
   }, [user, quoteNotificationShown, setQuoteNotificationShown]);
 
-  // --- UI LOGIC ---
+  // --- UI DYNAMIC RECS ---
   const getDynamicData = () => {
     const level = latestSeverity.toLowerCase();
     if (level.includes('severe')) {
@@ -281,20 +309,24 @@ const DashboardScreen = ({ route, navigation }: any) => {
       const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
       const dayName = days[new Date(selectedDateString).getDay()];
       const labels = filtered.length === 1 ? [dayName] : filtered.map(item => new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      const scores = filtered.map(item => getSeverityLevel(item.phqSeverity));
-      setChartData({ labels, datasets: [{ data: scores }] });
+      const phqScores = filtered.map(item => getSeverityLevel(item.phqSeverity));
+      const gadScores = filtered.map(item => getSeverityLevel(item.gadSeverity));
+      setChartData({ 
+        labels, 
+        datasets: [
+          { data: phqScores, label: "PHQ-9", color: () => '#EF4444' },
+          { data: gadScores, label: "GAD-7", color: () => '#3B82F6' }
+        ] 
+      });
       setLatestSeverity(filtered[filtered.length - 1].phqSeverity);
     } else {
       Alert.alert("No Data", `No results for ${selectedDateString}.`);
     }
   };
 
-  // --- CANCEL EMERGENCY ACTION (SHOW CUSTOM HIGH-QUALITY DESIGN POPUP) ---
   const handleCancelAlertTrigger = () => {
-    clearTimeout(timerRef.current);
     setShowEmergencyModal(false);
     setTimer(30);
-    // Smooth custom UI overlay trigger
     setTimeout(() => {
       setShowHelplineModal(true);
     }, 400);
@@ -304,7 +336,6 @@ const DashboardScreen = ({ route, navigation }: any) => {
     <LinearGradient colors={[theme.primary, theme.secondary, theme.background]} style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
       
-      {/* Motivational Quote Notification - appears from top */}
       {showQuoteNotification && currentQuote.text && (
         <MotivationalNotification
           quote={currentQuote.text}
@@ -324,7 +355,7 @@ const DashboardScreen = ({ route, navigation }: any) => {
             
             <Text style={[styles.emergencyTitle, {color: theme.primary}]}>Critical Alert Detected</Text>
             <Text style={styles.emergencyDesc}>
-              We detected a critical emotional state. We'll automatically notify your guardians with your location in:
+              We detected a critical emotional state. Your WhatsApp will open with a pre-written message and your location ready to send to your guardian in:
             </Text>
             
             <View style={[styles.timerCircle, {borderColor: theme.secondary}]}>
@@ -340,68 +371,68 @@ const DashboardScreen = ({ route, navigation }: any) => {
               <Text style={styles.imFineText}>CANCEL ALERT</Text>
             </TouchableOpacity>
             
-            <Text style={styles.autoNote}>Auto-sending alert to guardians...</Text>
+            <Text style={styles.autoNote}>WhatsApp/SMS will auto-open when timer ends. Just click Send to notify your guardian!</Text>
           </LinearGradient>
         </View>
       </Modal>
 
-      {/* 2. BRAND NEW CUSTOM DESIGN HIGH-QUALITY HELPLINE POPUP */}
-      <Modal visible={showHelplineModal} transparent animationType="slide">
+      {/* HELP CENTER MODAL JSX */}
+      <Modal visible={showHelplineModal} transparent animationType="fade">
         <View style={styles.customPopupOverlay}>
-          <View style={styles.customPopupCard}>
-            <View style={styles.customPopupHeader}>
-              <View style={styles.heartIconCircle}>
-                <Icon name="heart" size={30} color="#EF4444" />
-              </View>
-              <Text style={[styles.customPopupTitle, {color: theme.primary}]}>We Care About You</Text>
-              <Text style={styles.customPopupSub}>If things feel heavy, instant institutional support is right here for you:</Text>
-            </View>
+          <LinearGradient colors={['#FFFFFF', '#F8FAFF', '#EEF4FF']} style={styles.newEmergencyPopup}>
+            <LinearGradient colors={[theme.secondary, theme.primary]} style={styles.newHeartWrapper}>
+              <Icon name="shield-checkmark" size={30} color="white" />
+            </LinearGradient>
 
-            {/* Helpline Row 1: Edhi */}
-            <View style={styles.helplineRowItem}>
-              <View style={styles.helplineBadgeBox}>
-                <Icon name="pulse-outline" size={22} color={theme.primary} />
-              </View>
-              <View style={{flex: 1, marginLeft: 12}}>
-                <Text style={styles.helplineLabelName}>Edhi Ambulance Helpline</Text>
-                <Text style={[styles.helplineActualNumber, {color: theme.secondary}]}>Dial: 115</Text>
-              </View>
-            </View>
+            <Text style={[styles.newPopupTitle, { color: theme.primary }]}>Support Center</Text>
+            <Text style={styles.newPopupSubtitle}>
+              You\'re not alone. Emergency and mental health support services are available anytime you need help.
+            </Text>
 
-            {/* Helpline Row 2: Rescue 1122 */}
-            <View style={styles.helplineRowItem}>
-              <View style={styles.helplineBadgeBox}>
-                <Icon name="shield-checkmark-outline" size={22} color={theme.primary} />
+            <TouchableOpacity activeOpacity={0.85} style={styles.newHelplineCard} onPress={() => Linking.openURL('tel:1122')}>
+              <LinearGradient colors={[theme.secondary + '20', theme.primary + '15']} style={styles.newHelplineIcon}>
+                <Icon name="flash" size={20} color={theme.primary} />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.newHelplineTitle}>Rescue Services</Text>
+                <Text style={[styles.newHelplineNumber, { color: theme.primary }]}>Dial: 1122</Text>
               </View>
-              <View style={{flex: 1, marginLeft: 12}}>
-                <Text style={styles.helplineLabelName}>Punjab Emergency Rescue</Text>
-                <Text style={[styles.helplineActualNumber, {color: theme.secondary}]}>Dial: 1122</Text>
+              <Icon name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity activeOpacity={0.85} style={styles.newHelplineCard} onPress={() => Linking.openURL('tel:115')}>
+              <LinearGradient colors={[theme.secondary + '20', theme.primary + '15']} style={styles.newHelplineIcon}>
+                <Icon name="medkit" size={20} color={theme.primary} />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.newHelplineTitle}>Medical Emergency</Text>
+                <Text style={[styles.newHelplineNumber, { color: theme.primary }]}>Dial: 115</Text>
               </View>
-            </View>
+              <Icon name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
 
-            {/* Action Buttons Section */}
-            <View style={styles.popupActionContainer}>
-              <TouchableOpacity 
-                activeOpacity={0.8}
-                style={[styles.popupCallActionBtn, {backgroundColor: theme.primary}]}
-                onPress={() => {
-                  setShowHelplineModal(false);
-                  Linking.openURL('tel:1122');
-                }}
-              >
-                <Icon name="call" size={18} color="white" style={{marginRight: 8}} />
-                <Text style={styles.popupCallActionText}>CALL RESCUE 1122</Text>
-              </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.85} style={styles.newHelplineCard} onPress={() => Linking.openURL('tel:1414')}>
+              <LinearGradient colors={[theme.secondary + '20', theme.primary + '15']} style={styles.newHelplineIcon}>
+                <Icon name="heart" size={20} color={theme.primary} />
+              </LinearGradient>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.newHelplineTitle}>Mental Health Support</Text>
+                <Text style={[styles.newHelplineNumber, { color: theme.primary }]}>Dial: 1414</Text>
+              </View>
+              <Icon name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
 
-              <TouchableOpacity 
-                activeOpacity={0.7}
-                style={styles.popupDismissActionBtn}
-                onPress={() => setShowHelplineModal(false)}
-              >
-                <Text style={[styles.popupDismissActionText, {color: theme.primary}]}>I'm Okay Now</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+            <TouchableOpacity activeOpacity={0.9} style={styles.newCallButton} onPress={() => { setShowHelplineModal(false); Linking.openURL('tel:1122'); }}>
+              <LinearGradient colors={[theme.secondary, theme.primary]} style={styles.newCallGradient}>
+                <Icon name="call" size={18} color="white" />
+                <Text style={styles.newCallText}>CALL EMERGENCY</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity activeOpacity={0.7} style={styles.newDismissBtn} onPress={() => setShowHelplineModal(false)}>
+              <Text style={[styles.newDismissText, { color: theme.primary }]}>I\'M SAFE NOW</Text>
+            </TouchableOpacity>
+          </LinearGradient>
         </View>
       </Modal>
 
@@ -422,13 +453,8 @@ const DashboardScreen = ({ route, navigation }: any) => {
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* FULL WIDTH CONDITION CARD */}
         <View style={styles.infoRow}>
-          <LinearGradient 
-            colors={[theme.secondary, theme.primary]} 
-            start={{x: 0, y: 0}} end={{x: 1, y: 0}}
-            style={styles.infoCardFullWidth}
-          >
+          <LinearGradient colors={[theme.secondary, theme.primary]} start={{x: 0, y: 0}} end={{x: 1, y: 0}} style={styles.infoCardFullWidth}>
             <View style={styles.conditionHeader}>
               <MCOIcon name="chart-line-variant" size={32} color="white" />
               <Text style={styles.stressLabel}>Current Condition</Text>
@@ -449,6 +475,18 @@ const DashboardScreen = ({ route, navigation }: any) => {
              <Text style={[styles.chartTitle, {color: theme.primary}]}>Emotional Balance</Text>
              <MCOIcon name="dots-vertical" size={20} color="#ccc" />
           </View>
+
+          <View style={styles.chartLegend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, {backgroundColor: '#EF4444'}]} />
+              <Text style={styles.legendLabel}>PHQ-9 (Depression)</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, {backgroundColor: '#3B82F6'}]} />
+              <Text style={styles.legendLabel}>GAD-7 (Anxiety)</Text>
+            </View>
+          </View>
+
           {loading ? <ActivityIndicator color={theme.primary} size="large" /> : (
             <LineChart
               data={chartData}
@@ -469,10 +507,18 @@ const DashboardScreen = ({ route, navigation }: any) => {
                 fillShadowGradientOpacity: 0.2,
                 propsForDots: { r: "5", strokeWidth: "2", stroke: theme.secondary },
                 propsForBackgroundLines: { strokeDasharray: "5, 5", stroke: "#E2E8F0" },
-                propsForLabels: { fontSize: 10, dx: 5 }, 
-                paddingLeft: 35, 
+                propsForLabels: { fontSize: 9, dx: 5 }, 
+                paddingLeft: 115,
+                propsForMultilineLabels: {
+                  backgroundColor: "white",
+                  borderRadius: 10,
+                  paddingHorizontal: 6,
+                  paddingVertical: 4
+                }
               }}
               style={{ marginVertical: 8, borderRadius: 16, paddingRight: 45 }}
+              withVerticalLabels={true}
+              withHorizontalLabels={true}
             />
           )}
         </View>
@@ -549,6 +595,10 @@ const styles = StyleSheet.create({
   chartCardSolid: { padding: 15, borderRadius: 25, backgroundColor: 'white', elevation: 4, overflow: 'hidden' },
   chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   chartTitle: { fontWeight: 'bold', fontSize: 16 },
+  chartLegend: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 12, paddingHorizontal: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center' },
+  legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
+  legendLabel: { fontSize: 12, fontWeight: '500', color: '#4B5563' },
   recommendTitle: { fontSize: 18, fontWeight: 'bold', color: 'white', marginTop: 25, marginBottom: 10 },
   recommendationCard: { flexDirection: 'row', padding: 15, borderRadius: 25, marginBottom: 15, backgroundColor: 'white' },
   listIconBox: { width: 60, height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
@@ -574,22 +624,143 @@ const styles = StyleSheet.create({
   imFineText: { color: 'white', fontWeight: 'bold', fontSize: 16, letterSpacing: 1 },
   autoNote: { fontSize: 11, color: '#9CA3AF', marginTop: 15, fontStyle: 'italic' },
   
-  // BRAND NEW DESIGN STYLES FOR HELPLINE POPUP
-  customPopupOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  customPopupCard: { backgroundColor: 'white', width: '100%', borderRadius: 32, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.3, shadowRadius: 20, elevation: 24 },
-  customPopupHeader: { alignItems: 'center', marginBottom: 20 },
-  heartIconCircle: { width: 65, height: 65, borderRadius: 32.5, backgroundColor: '#FEF2F2', justifyContent: 'center', alignItems: 'center', marginBottom: 14 },
-  customPopupTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', marginBottom: 8 },
-  customPopupSub: { fontSize: 13, color: '#64748B', textAlign: 'center', lineHeight: 18, paddingHorizontal: 10 },
-  helplineRowItem: { flexDirection: 'row', alignItems: 'center', width: '100%', backgroundColor: '#F8FAFC', padding: 14, borderRadius: 20, marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
-  helplineBadgeBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.9)', justifyContent: 'center', alignItems: 'center', elevation: 2 },
-  helplineLabelName: { fontSize: 14, fontWeight: '600', color: '#1E293B' },
-  helplineActualNumber: { fontSize: 13, fontWeight: '700', marginTop: 1 },
-  popupActionContainer: { width: '100%', marginTop: 10 },
-  popupCallActionBtn: { width: '100%', height: 56, borderRadius: 18, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 3 },
-  popupCallActionText: { color: 'white', fontSize: 15, fontWeight: 'bold', letterSpacing: 0.5 },
-  popupDismissActionBtn: { width: '100%', height: 50, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginTop: 8 },
-  popupDismissActionText: { fontSize: 14, fontWeight: '700' }
-});
 
+/* HELP CENTER MODAL STYLES */
+
+
+
+/* ========================= */
+/* HELP CENTER MODAL STYLES */
+/* ========================= */
+
+customPopupOverlay: {
+  flex: 1,
+  backgroundColor: 'rgba(15,23,42,0.75)',
+  justifyContent: 'center',
+  alignItems: 'center',
+  padding: 20,
+},
+
+newEmergencyPopup: {
+  width: '92%',
+  borderRadius: 30,
+  paddingVertical: 20,
+  paddingHorizontal: 18,
+  alignItems: 'center',
+  overflow: 'hidden',
+
+  shadowColor: '#000',
+  shadowOffset: {
+    width: 0,
+    height: 10,
+  },
+  shadowOpacity: 0.2,
+  shadowRadius: 18,
+  elevation: 20,
+},
+
+newHeartWrapper: {
+  width: 70,
+  height: 70,
+  borderRadius: 22,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginBottom: 14,
+  elevation: 6,
+},
+
+newPopupTitle: {
+  fontSize: 22,
+  fontWeight: 'bold',
+  marginBottom: 6,
+},
+
+newPopupSubtitle: {
+  textAlign: 'center',
+  color: '#64748B',
+  fontSize: 13,
+  lineHeight: 20,
+  marginBottom: 18,
+  paddingHorizontal: 8,
+},
+
+newHelplineCard: {
+  width: '100%',
+  backgroundColor: 'white',
+  borderRadius: 20,
+  paddingVertical: 12,
+  paddingHorizontal: 14,
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 10,
+
+  borderWidth: 1,
+  borderColor: '#E2E8F0',
+
+  shadowColor: '#000',
+  shadowOffset: {
+    width: 0,
+    height: 2,
+  },
+  shadowOpacity: 0.06,
+  shadowRadius: 5,
+  elevation: 2,
+},
+
+newHelplineIcon: {
+  width: 48,
+  height: 48,
+  borderRadius: 15,
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 12,
+},
+
+newHelplineTitle: {
+  fontSize: 14,
+  fontWeight: '700',
+  color: '#1E293B',
+},
+
+newHelplineNumber: {
+  fontSize: 13,
+  marginTop: 2,
+  fontWeight: 'bold',
+},
+
+newCallButton: {
+  width: '100%',
+  borderRadius: 18,
+  overflow: 'hidden',
+  marginTop: 8,
+  elevation: 5,
+},
+
+newCallGradient: {
+  height: 52,
+  flexDirection: 'row',
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+
+newCallText: {
+  color: 'white',
+  fontWeight: 'bold',
+  fontSize: 14,
+  marginLeft: 8,
+  letterSpacing: 0.5,
+},
+
+newDismissBtn: {
+  marginTop: 8,
+  paddingVertical: 10,
+  width: '100%',
+  alignItems: 'center',
+},
+
+newDismissText: {
+  fontWeight: '700',
+  fontSize: 13,
+},
+});
 export default DashboardScreen;

@@ -9,6 +9,8 @@ const bodyParser = require('body-parser');
 const axios = require('axios');
 const Pusher = require('pusher'); // Pusher dependency top par import kar li
 const { getAIResponse } = require('./services/AIService');
+const EmergencyNumber = require('./models/EmergencyNumber');
+const Doctor = require('./models/Doctor');
 
 // --- TWILIO SDK (Optional) ---
 let twilioClient = null;
@@ -681,6 +683,82 @@ app.get('/api/quotes', async (req, res) => {
   }
 });
 
+
+// ========== EMERGENCY NUMBERS ENDPOINTS ==========
+// Get all emergency numbers
+app.get('/api/emergency-numbers', async (req, res) => {
+  try {
+    const emergencyNumbers = await EmergencyNumber.find({});
+    res.json({ 
+      success: true, 
+      data: emergencyNumbers,
+      count: emergencyNumbers.length 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========== DOCTORS ENDPOINTS ==========
+// Get all doctors
+app.get('/api/doctors', async (req, res) => {
+  try {
+    const doctors = await Doctor.find({});
+    res.json({ 
+      success: true, 
+      data: doctors,
+      count: doctors.length 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get doctors by category
+app.get('/api/doctors/category/:category', async (req, res) => {
+  try {
+    const { category } = req.params;
+    const doctors = await Doctor.find({ category });
+    res.json({ 
+      success: true, 
+      data: doctors,
+      category,
+      count: doctors.length 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get first doctor from each category
+app.get('/api/doctors/first/categories', async (req, res) => {
+  try {
+    const categories = [
+      'General Psychiatrist',
+      'Anxiety Specialist',
+      'Depression Specialist',
+      'Trauma Specialist',
+      'Child Psychologist',
+    ];
+
+    const firstDoctors = {};
+    for (const category of categories) {
+      const doctor = await Doctor.findOne({ category, isFirstInCategory: true });
+      if (doctor) {
+        firstDoctors[category] = doctor;
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      data: firstDoctors,
+      count: Object.keys(firstDoctors).length 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 // --- Health Check Endpoint ---
@@ -695,6 +773,12 @@ app.get('/', (req, res) => {
       signup: '/api/signup',
       login: '/api/login',
       emergency: '/api/send-emergency-alert',
+      emergencyNumbers: '/api/emergency-numbers',
+      doctors: {
+        all: 'GET /api/doctors',
+        byCategory: 'GET /api/doctors/category/:category',
+        firstInEachCategory: 'GET /api/doctors/first/categories'
+      },
       motivation: '/api/trigger-motivation',
       changePassword: 'PUT /api/users/:userId/change-password',
       updateProfile: 'PUT /api/users/:userId/profile',
@@ -706,6 +790,7 @@ app.get('/', (req, res) => {
     }
   });
 });
+
 
 // --- Start Server ---
 app.listen(PORT, () => {
