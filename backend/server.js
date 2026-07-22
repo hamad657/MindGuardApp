@@ -793,12 +793,28 @@ app.get('/', (req, res) => {
 
 
 // --- Start Server ---
-app.listen(PORT, () => {
-  console.log("\n" + "=".repeat(60));
-  console.log("🚀 MindGuard Backend Server Started");
-  console.log("=".repeat(60));
-  console.log(`🌐 Server: http://localhost:${PORT}`);
-  console.log(`📱 Mobile: http://192.168.0.100:${PORT}`);
-  console.log(`✅ API Ready for requests`);
-  console.log("=".repeat(60) + "\n");
-});
+// app.listen(PORT, () => {
+//   console.log("\n" + "=".repeat(60));
+//   console.log("🚀 MindGuard Backend Server Started");
+//   console.log("=".repeat(60));
+//   console.log(`🌐 Server: http://localhost:${PORT}`);
+//   console.log(`📱 Mobile: http://192.168.0.100:${PORT}`);
+//   console.log(`✅ API Ready for requests`);
+//   console.log("=".repeat(60) + "\n");
+// });
+// --- Start Server / Export for Vercel ---
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log("\n" + "=".repeat(60));
+    console.log("🚀 MindGuard Backend Server Started");
+    console.log("=".repeat(60));
+    console.log(`🌐 Server: http://localhost:${PORT}`);
+    console.log(`📱 Mobile: http://192.168.0.100:${PORT}`);
+    console.log(`✅ API Ready for requests`);
+    console.log("=".repeat(60) + "\n");
+  });
+}
+
+// Vercel deployment ke liye app export karna zaroori hai
+module.exports = app;
